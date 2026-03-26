@@ -1566,7 +1566,7 @@ def _rebuild_itineraries_from_unique_place_list_by_proximity(
     data: Dict[str, Any],
     city: str,
     *,
-    per_day_cap: int = 4,
+    per_day_cap: int = 6,
 ) -> None:
     """
     1) 여행 전체에서 '장소(name)'를 유니크로 List Up
@@ -1757,22 +1757,22 @@ def _ensure_itinerary_covers_trip_days(
         if not isinstance(items, list):
             items = []
         clean_items = [x for x in items if isinstance(x, dict)]
-        # 앱 로직/시간슬롯 최적화가 전제하는 기본 단위를 4개로 맞춤
-        clean_items = clean_items[:4]
+        # 앱 로직/시간슬롯 최적화가 전제하는 기본 단위를 3개로 맞춤
+        clean_items = clean_items[:3]
         days_out.append({"date_label": label or f"{len(days_out) + 1}일차", "items": clean_items})
     if len(days_out) > trip_days:
         days_out = days_out[:trip_days]
     while len(days_out) < trip_days:
         days_out.append({"date_label": f"{len(days_out) + 1}일차", "items": []})
-    slot_times = ["09:30-11:30", "12:00-13:00", "15:30-17:30", "18:00-19:30"]
+    slot_times = ["09:30-11:30", "12:00-13:00", "15:30-17:30"]
     rr = 0
     used_names: set[str] = set()
     for i, day in enumerate(days_out):
         day["date_label"] = f"{i + 1}일차"
         items = day["items"]
-        if len(items) > 4:
-            items = items[:4]
-        need_more = max(0, 4 - len(items))
+        if len(items) > 3:
+            items = items[:3]
+        need_more = max(0, 3 - len(items))
         for k in range(need_more):
             # 가능한 한 중복 없이(후보 다 쓰면 그때부터 재사용)
             picked = None
@@ -1790,7 +1790,7 @@ def _ensure_itinerary_covers_trip_days(
             items.append(
                 _synthetic_itinerary_item_from_candidate(
                     p0,
-                    slot_times[min(len(items), 3)],
+                    slot_times[min(len(items), 2)],
                     auto_pad=True,
                 )
             )
@@ -1897,6 +1897,161 @@ def _dedupe_itinerary_items_across_trip_days(
         # 치환된 항목은 why/intro도 이름에 맞게 간단히 업데이트
         it["why"] = f"{nm_final}: 후보로만 짜서 동선·취향 밸런스 맞춘 중복 제거 버전 ㅇㅇ"
         it["intro"] = f"{nm_final}: {ar or '그 근처'}에서 {cat} 느낌. (중복 제거 자동치환)"
+
+
+def _is_generic_place_name(name: str) -> bool:
+    s = (name or "").strip()
+    if not s:
+        return True
+    bad_tokens = [
+        "코스",
+        "거리",
+        "랜드마크",
+        "포인트",
+        "존",
+        "확장 후보",
+        "대표",
+        "시내",
+    ]
+    return any(tok in s for tok in bad_tokens)
+
+
+def _is_tour_category(cat: str) -> bool:
+    s = (cat or "").strip()
+    if not s:
+        return False
+    non_tour = {"식사", "카페/휴식", "야시장/마켓"}
+    return s not in non_tour
+
+
+def _pick_best_candidate(
+    candidates: List[Dict[str, Any]],
+    used_day: set[str],
+    used_trip: set[str],
+    predicate,
+) -> Optional[Dict[str, Any]]:
+    """
+    우선순위:
+    1) day/trip 모두 미사용 + predicate 통과 + 이름이 구체적
+    2) day/trip 모두 미사용 + predicate 통과
+    3) day 미사용 + predicate 통과 + 이름이 구체적
+    4) day 미사용 + predicate 통과
+    """
+    buckets: List[List[Dict[str, Any]]] = [[], [], [], []]
+    for c in candidates:
+        nm = (c.get("name") or "").strip()
+        if not nm or nm in used_day:
+            continue
+        if not predicate(c):
+            continue
+        generic = _is_generic_place_name(nm)
+        in_trip = nm in used_trip
+        if (not in_trip) and (not generic):
+            buckets[0].append(c)
+        elif (not in_trip):
+            buckets[1].append(c)
+        elif (not generic):
+            buckets[2].append(c)
+        else:
+            buckets[3].append(c)
+    for b in buckets:
+        if b:
+            return b[0]
+    return None
+
+
+def _enforce_daily_required_places(
+    data: Dict[str, Any],
+    candidates: List[Dict[str, Any]],
+    *,
+    trip_days: Optional[int] = None,
+) -> None:
+    """
+    일자별 필수 구성:
+      - 관광지 3곳
+      - 중식 1곳
+      - 석식 1곳
+      - 카페 1곳
+    총 6개를 기본으로 강제합니다.
+    """
+    if not candidates:
+        return
+    cand = [c for c in candidates if isinstance(c, dict) and (c.get("name") or "").strip()]
+    if not cand:
+        return
+    cand_by_name = {(c.get("name") or "").strip(): c for c in cand}
+
+    days = data.get("itineraries")
+    if not isinstance(days, list):
+        days = []
+    if trip_days is not None and trip_days > 0:
+        if len(days) > trip_days:
+            days = days[:trip_days]
+        while len(days) < trip_days:
+            days.append({"date_label": f"{len(days) + 1}일차", "items": []})
+
+    used_trip: set[str] = set()
+    new_days: List[Dict[str, Any]] = []
+    for d_i, day in enumerate(days):
+        items = day.get("items") or []
+        if not isinstance(items, list):
+            items = []
+        existing_by_name: Dict[str, Dict[str, Any]] = {}
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            nm = (it.get("name") or "").strip()
+            if nm and nm in cand_by_name and nm not in existing_by_name:
+                existing_by_name[nm] = it
+
+        used_day: set[str] = set()
+        picked: List[Dict[str, Any]] = []
+
+        # 필수 슬롯
+        required_slots = [
+            ("tour", lambda c: _is_tour_category(c.get("category", ""))),
+            ("tour", lambda c: _is_tour_category(c.get("category", ""))),
+            ("tour", lambda c: _is_tour_category(c.get("category", ""))),
+            ("lunch", lambda c: (c.get("meal_type") or "").strip() == "점심"),
+            ("dinner", lambda c: (c.get("meal_type") or "").strip() == "저녁"),
+            ("cafe", lambda c: "카페" in (c.get("category") or "")),
+        ]
+
+        for _slot_name, pred in required_slots:
+            # 기존 items 중 predicate 만족 + 미사용 우선
+            picked_from_existing = None
+            for nm, it in existing_by_name.items():
+                if nm in used_day:
+                    continue
+                c0 = cand_by_name.get(nm)
+                if c0 and pred(c0):
+                    picked_from_existing = c0
+                    break
+            if picked_from_existing is None:
+                picked_from_existing = _pick_best_candidate(cand, used_day, used_trip, pred)
+            if picked_from_existing is None:
+                # fallback: day 내 미사용 아무 후보
+                picked_from_existing = _pick_best_candidate(cand, used_day, used_trip, lambda _c: True)
+            if picked_from_existing is None:
+                continue
+            nm = (picked_from_existing.get("name") or "").strip()
+            used_day.add(nm)
+            used_trip.add(nm)
+            if nm in existing_by_name:
+                picked.append(existing_by_name[nm])
+            else:
+                picked.append(
+                    _synthetic_itinerary_item_from_candidate(
+                        picked_from_existing,
+                        _DAY_TIME_SLOTS_REORDERED[min(len(picked), len(_DAY_TIME_SLOTS_REORDERED) - 1)],
+                        auto_pad=False,
+                    )
+                )
+
+        _reassign_day_time_slots(picked)
+        new_days.append({"date_label": f"{d_i + 1}일차", "items": picked})
+
+    data["itineraries"] = new_days
 
 
 def finalize_itinerary_payload(
@@ -2070,6 +2225,7 @@ def generate_itinerary_openai(
         _ensure_itinerary_covers_trip_days(out, trip_days, candidates)
         _coerce_itinerary_item_names_to_candidates(out, candidates)
         _dedupe_itinerary_items_across_trip_days(out, candidates)
+        _enforce_daily_required_places(out, candidates, trip_days=trip_days)
         finalize_itinerary_payload(out, profile, city=city)
         return out
 
@@ -2112,7 +2268,8 @@ def generate_itinerary_openai(
             "Use only candidate 'name' values for 'name'.",
             f"Itineraries MUST be a JSON array of exactly {trip_days} day objects (same as trip_days). "
             "Each day needs date_label and items. Do NOT return fewer days than trip_days; do NOT merge multiple days into one.",
-            "For each day output 3~5 items.",
+            "For each day output exactly 6 items: 3 tourist attractions + 1 lunch + 1 dinner + 1 cafe.",
+            "Prefer specific place names (real POIs) over vague area-level labels like '거리/코스/포인트'.",
             "Waiting preference (profile.waiting_preference) 고려: '선호'면 waiting_level='높음'을 우선, '무관'은 무시, '비선호/극혐'이면 waiting_level='낮음/중간'을 우선. 식사/카페/야시장 후보 선택에 특히 반영.",
             "Within each day, order items so consecutive stops are geographically close (minimize backtracking). "
             "The app post-process may reorder stops using catalog coordinates to shorten the open-path distance.",
@@ -2168,6 +2325,7 @@ def generate_itinerary_openai(
         _ensure_itinerary_covers_trip_days(data, trip_days, candidates)
         _coerce_itinerary_item_names_to_candidates(data, candidates)
         _dedupe_itinerary_items_across_trip_days(data, candidates)
+        _enforce_daily_required_places(data, candidates, trip_days=trip_days)
         finalize_itinerary_payload(data, profile, city=city)
         return data
     except Exception:
@@ -2179,6 +2337,7 @@ def generate_itinerary_openai(
         _ensure_itinerary_covers_trip_days(data, trip_days, candidates)
         _coerce_itinerary_item_names_to_candidates(data, candidates)
         _dedupe_itinerary_items_across_trip_days(data, candidates)
+        _enforce_daily_required_places(data, candidates, trip_days=trip_days)
         finalize_itinerary_payload(data, profile, city=city)
         return data
 
