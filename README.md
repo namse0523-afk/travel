@@ -22,21 +22,35 @@ git push origin master
   git push -u origin master
   ```
 
-## Streamlit Community Cloud 배포
+## Streamlit Share 배포 (Community Cloud)
 
-1. [share.streamlit.io](https://share.streamlit.io) (Streamlit Community Cloud) 로그인 후 GitHub 권한 허용.
-2. **Create app** (또는 **New app**) → 저장소·브랜치(`master`) 선택.
+배포 URL: [share.streamlit.io](https://share.streamlit.io) — GitHub 저장소와 연동해 빌드합니다.
+
+**체크리스트**
+
+| 항목 | 내용 |
+|------|------|
+| GitHub | 코드가 push된 저장소·브랜치(예: `master`) |
+| Main file | 루트의 `app.py` |
+| 의존성 | 루트 `requirements.txt` (Cloud가 자동 `pip install`) |
+| Python | **Advanced settings**에서 버전 선택(로컬·`runtime.txt`와 맞추면 안전, 기본은 보통 3.12) |
+| Secrets | 앱 **⚙ Settings → Secrets**에 `OPENAI_API_KEY` (아래 TOML 형식) |
+
+**순서**
+
+1. [share.streamlit.io](https://share.streamlit.io) 로그인 → GitHub 연동 허용.
+2. **Create app** → 저장소·브랜치 선택.
 3. **Main file path**: `app.py`
-4. **Advanced settings** → **Python version**: 로컬과 맞출 것(기본은 보통 3.12). 루트 `runtime.txt`는 팀이 맞추는 Python 버전 메모용입니다.
-5. 앱 **⚙ Settings → Secrets**에 아래를 붙여 넣고 저장 (`/.streamlit/secrets.toml.example` 참고). 형식은 TOML 그대로입니다.
+4. **Advanced settings** → **Python version** 선택.
+5. **⚙ Settings → Secrets**에 붙여 넣기 (`.streamlit/secrets.toml.example` 참고):
 
    ```toml
    OPENAI_API_KEY = "sk-proj-여기에_본인_키"
    ```
 
-6. **Save** 후 빌드가 끝날 때까지 대기. 코드 push 시 자동으로 다시 배포됩니다.
+6. 저장 후 빌드 완료까지 대기. 이후 `git push` 시 자동 재배포됩니다.
 
-로컬에서만 쓰는 비밀값은 `.streamlit/secrets.toml`에 두되, 이 파일은 **절대 커밋하지 마세요**.
+로컬 비밀값은 `.streamlit/secrets.toml` 또는 `.env` — `secrets.toml`은 **커밋하지 마세요** (`.gitignore` 처리됨).
 
 ## 로컬 실행
 
@@ -53,6 +67,6 @@ Windows에서는 `run_app.bat`을 사용할 수 있습니다.
 |------|------|
 | `app.py` | 여행 계획 메인 앱 |
 | `requirements.txt` | Cloud가 설치하는 패키지 |
-| `runtime.txt` | (선택) Cloud Python 버전 |
+| `runtime.txt` | 로컬·문서용 Python 버전 메모 (`python-3.12`; Cloud는 UI에서 지정) |
 | `.streamlit/config.toml` | Streamlit 동작 옵션 |
 | `.streamlit/secrets.toml.example` | Secrets 입력 예시 (비밀 아님) |

@@ -1,4 +1,4 @@
-# Streamlit Community Cloud / 로컬 공통
+# Community Cloud(share.streamlit.io)와 로컬에서 동일하게 적용됩니다.
 [server]
 headless = true
 

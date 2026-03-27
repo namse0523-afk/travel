@@ -1,3 +1,4 @@
+# Streamlit Community Cloud(share.streamlit.io)는 저장소 루트의 이 파일로 pip 설치합니다.
 streamlit==1.40.1
 pydeck==0.9.1
 pandas==2.2.3
