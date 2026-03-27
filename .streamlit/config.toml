@@ -1,0 +1,6 @@
+# Streamlit Cloud / 로컬 공통 기본값 (필요 시 조정)
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

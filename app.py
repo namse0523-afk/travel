@@ -2249,6 +2249,10 @@ def generate_itinerary_openai(
     system_msg = (
         "You generate a travel itinerary. Use ONLY the provided candidates. "
         "Do not invent places. Output MUST be valid JSON only. "
+        "The JSON field 'profile' equals the app left-sidebar settings the user chose. "
+        "You MUST recommend visit stops—scenic sites, tourist attractions, favored eateries, cafes, "
+        "cultural/leisure facilities, etc.—from the candidates in a way that clearly reflects that profile "
+        "(demographics, personality/MBTI, budget tier, interests, waiting preference, companion context). "
         "All user-facing narrative fields (summary, profile_basis, each item's why and intro, "
         "food_plan, transport_notes, budget_check, alternatives) MUST be written in Korean.\n\n"
         "STYLE for those Korean fields: write like casual Korean internet board posts (디시인사이드/갤 톤). "
@@ -2265,6 +2269,8 @@ def generate_itinerary_openai(
         "budget_tier": budget_tier,
         "candidates": prompt_candidates,
         "rules": [
+            "여행계획 수립 시 `profile`은 앱 **좌측 사이드바**에서 사용자가 설정한 조건과 동일하다. 이 조건(성별·성향·MBTI·나이·예산·관심분야/취향·웨이팅 선호·동행 여부·친밀도 등)을 근거로, 후보 목록에서 "
+            "명승지·관광지·맛집·카페·문화·레저 시설 등 구체적인 **방문 장소**를 골라 추천할 것. 각 일정 항목의 why/intro에서도 해당 설정과의 연결을 분명히 할 것.",
             "Use only candidate 'name' values for 'name'.",
             f"Itineraries MUST be a JSON array of exactly {trip_days} day objects (same as trip_days). "
             "Each day needs date_label and items. Do NOT return fewer days than trip_days; do NOT merge multiple days into one.",
@@ -2434,10 +2440,10 @@ def build_map_layers(
     city: str,
     itinerary_data: Dict[str, Any],
 ) -> Optional[pdk.Deck]:
+    """일정 마커/경로가 있는 pydeck Deck (베이스맵: Carto Positron, API 키 불필요)."""
     catalog_places = CITY_CATALOG.get(city, {}).get("places", [])
     by_name = {p["name"]: p for p in catalog_places}
 
-    # 밝은 베이스맵(무료 Carto Positron 스타일)
     _light_map_style = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
     rows: List[Dict[str, Any]] = []
@@ -3028,8 +3034,8 @@ def main() -> None:
                     key="travel_plan_map_v2",
                 )
                 st.caption(
-                    "같은 **일차**는 색이 같음(원이랑 선). 숫자는 그날 **방문 순서**고, 선은 표 순서대로 이은 거임. "
-                    "순서는 카탈로그 좌표 기준 **직선거리 합이 짧게** 맞춰짐(도로 최단은 아님)."
+                    "배경은 pydeck 기본 베이스맵(Carto Positron)입니다. 같은 **일차**는 색이 같음(원·선). "
+                    "숫자는 그날 **방문 순서**, 선은 표 순서 연결. 순서는 카탈로그 좌표 기준 직선거리 근사(도로 최단은 아님)."
                 )
             with col_leg:
                 rows_html = []
@@ -3061,8 +3067,8 @@ def main() -> None:
                 key="travel_plan_map_v2",
             )
             st.caption(
-                "같은 **일차**는 색이 같음(원이랑 선). 숫자는 **방문 순서**, 선은 표 순서 연결. "
-                "직선거리 기준으로 순서는 짧게 잡혀 있음(실제 차·지하철 경로 최적은 아님)."
+                "배경은 pydeck 기본 베이스맵(Carto Positron)입니다. 같은 **일차**는 색이 같음(원·선). "
+                "숫자는 **방문 순서**, 선은 표 순서 연결. 직선거리 근사 순서(실제 차·지하철 최적은 아님)."
             )
 
     st.markdown("---")
